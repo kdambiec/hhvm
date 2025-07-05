@@ -29,6 +29,7 @@ jobs:
           export DEBIAN_FRONTEND=noninteractive
 
           apt-get update -y
+          # The libheif-dev package is removed as we will disable the feature.
           apt-get install -y --no-install-recommends \
             ca-certificates \
             curl \
@@ -37,8 +38,7 @@ jobs:
             make \
             g++ \
             gnupg \
-            software-properties-common \
-            libheif-dev # <-- FIX IS HERE: Add the missing HEIF development library.
+            software-properties-common
 
           echo "Adding HHVM repository..."
           install -d -m 0755 /usr/share/keyrings
@@ -65,7 +65,10 @@ jobs:
           echo "Building HHVM from local repository... ⏳"
           mkdir -p build
           cd build
-          cmake -DMYSQL_UNIX_SOCK_ADDR=/var/run/mysqld/mysqld.sock ..
+          # ----- FIX IS HERE -----
+          # Add the -DENABLE_GD_HEIF=OFF flag to disable the problematic dependency.
+          cmake -DENABLE_GD_HEIF=OFF -DMYSQL_UNIX_SOCK_ADDR=/var/run/mysqld/mysqld.sock ..
+          # -----------------------
           make -j$(nproc)
 
       # Step 4: Upload the final build as an artifact.
