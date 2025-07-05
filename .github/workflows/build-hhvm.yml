@@ -16,20 +16,15 @@ jobs:
 
     # All steps will still execute inside this container on the runner.
     container:
-      # ----- CHANGE IS HERE -----
-      # Using Ubuntu 20.04 (Focal) as requested.
       image: ubuntu:20.04
-      # --------------------------
 
     steps:
       # Step 1: Install all dependencies.
       - name: Install Dependencies
         run: |
-          # ----- CHANGE IS HERE -----
           # Set the codename for Ubuntu 20.04.
           UBUNTU_CODENAME=focal
-          # --------------------------
-
+          
           # Prevent interactive prompts during installation.
           export DEBIAN_FRONTEND=noninteractive
 
@@ -42,20 +37,19 @@ jobs:
             make \
             g++ \
             gnupg \
-            software-properties-common
+            software-properties-common \
+            libheif-dev # <-- FIX IS HERE: Add the missing HEIF development library.
 
           echo "Adding HHVM repository..."
           install -d -m 0755 /usr/share/keyrings
           curl -fsSL https://dl.hhvm.com/conf/hhvm.gpg.key | gpg --dearmor -o /usr/share/keyrings/hhvm.gpg
-
-          # ----- CHANGE IS HERE -----
+          
           # Add the Ubuntu repository for both binary (deb) and source (deb-src).
           tee /etc/apt/sources.list.d/hhvm.list <<EOF
           deb [signed-by=/usr/share/keyrings/hhvm.gpg] https://dl.hhvm.com/ubuntu ${UBUNTU_CODENAME} main
           deb-src [signed-by=/usr/share/keyrings/hhvm.gpg] https://dl.hhvm.com/ubuntu ${UBUNTU_CODENAME} main
           EOF
-          # --------------------------
-
+          
           apt-get update -y
           apt-get build-dep -y hhvm-nightly
 
