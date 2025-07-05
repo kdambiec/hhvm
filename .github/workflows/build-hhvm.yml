@@ -78,7 +78,7 @@ jobs:
     - name: Installing HHVM deps and building HHVM
       run: ci/bin/make-debianish-package
     - name: Uploading artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: out-directory
         path: ${{ env.OUT }}
