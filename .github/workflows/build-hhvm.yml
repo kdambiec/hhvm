@@ -1,16 +1,16 @@
 # .github/workflows/build-hhvm.yml
-# GitHub Actions pipeline to build HHVM from source inside a Debian 11 container.
+# Builds HHVM from the code in this repository.
 
-name: Build HHVM in Debian 11
+name: Build HHVM from Local Repo
 
-# This allows the workflow to be triggered manually from the Actions tab in GitHub.
+# This allows the workflow to be triggered manually from the Actions tab.
 on:
   workflow_dispatch:
 
 jobs:
   build:
     name: Build HHVM
-    # This now targets your specific, dynamically-named self-hosted runner.
+    # This targets your specific, dynamically-named self-hosted runner.
     runs-on:
       - codebuild-karunscloud-hhvm-build-${{ github.run_id }}-${{ github.run_attempt }}
 
@@ -19,16 +19,24 @@ jobs:
       image: debian:bullseye-slim
 
     steps:
+      # --------------------- CHANGE IS HERE ---------------------
+      # Step 1: Check out your repository's code, including all submodules.
+      - name: Check out repository code
+        uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+      # --------------------------------------------------------
+
       # Cache the build directory to speed up subsequent runs.
       - name: Cache Build Directory
         uses: actions/cache@v4
         with:
-          path: /__w/hhvm-from-source/hhvm-from-source/hhvm/build
+          path: /__w/hhvm-from-source/hhvm-from-source/build
           key: ${{ runner.os }}-debian11-hhvm-build-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-debian11-hhvm-build-
-      
-      # The following 'run' steps execute inside the Debian container.
+
+      # The 'run' steps execute inside the Debian container.
       - name: Install Dependencies
         run: |
           DEBIAN_CODENAME=bullseye
@@ -59,24 +67,20 @@ jobs:
           apt-get update -y
           apt-get build-dep -y hhvm-nightly
 
-      - name: Download and Build HHVM
+      # --------------------- CHANGE IS HERE ---------------------
+      # The git clone/cd commands are removed since actions/checkout handled it.
+      - name: Build HHVM
         run: |
-          # 1. Download HHVM source code
-          echo "Cloning HHVM repository..."
-          git clone --depth=1 git://github.com/facebook/hhvm.git
-          cd hhvm
-          git submodule update --init --recursive
-
-          # 2. Build HHVM
-          echo "Building HHVM... this will take a long time. ⏳"
+          echo "Building HHVM from local repository... ⏳"
           mkdir build
           cd build
           cmake -DMYSQL_UNIX_SOCK_ADDR=/var/run/mysqld/mysqld.sock ..
           make -j$(nproc)
+      # --------------------------------------------------------
 
       # Upload the final build as an artifact for download.
       - name: Upload HHVM Artifact
         uses: actions/upload-artifact@v4
         with:
           name: hhvm-build-debian11
-          path: hhvm/
+          path: build/
