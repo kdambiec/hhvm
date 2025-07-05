@@ -28,9 +28,9 @@ jobs:
   build_ubuntu_focal_nightly:
     runs-on: 16-core
     container:
-      image: ubuntu:focal
+      image: ubuntu:noble
       env:
-        DISTRO: ubuntu-20.04-focal
+        DISTRO: ubuntu-24.04-noble
         IS_NIGHTLY: 1
         CLANG_VERSION: 12
     steps:
