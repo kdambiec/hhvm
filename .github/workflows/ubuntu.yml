@@ -1,71 +1,82 @@
-name: Ubuntu CI
+# .github/workflows/build-hhvm.yml
+# Builds HHVM from the code in this repository using an Ubuntu 20.04 container.
 
+name: Build HHVM from Local Repo
+
+# This allows the workflow to be triggered manually from the Actions tab.
 on:
-  push:
-    branches-ignore:
-      # Exclude the push event for exported diffs, because the CI for export
-      # should have been covered by GitHub Actions triggered by pull requests.
-      - 'export-D+'
-  pull_request:
-
-concurrency:
-  # If the workflow is triggered by a pull request, then cancel previous runs
-  # for the same pull request, which share the same `github.ref`, otherwise the
-  # run ID is used to identify the concurrency group, which is a no-op because
-  # the run ID is always unique for each trigged event.
-  group: ubuntu-ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
-  cancel-in-progress: true
-
-# OUT needs to be global. Ideally it would be local to the job so we could
-# store it in ${{ runner.temp }} instead of the checkout directory.
-# Unfortunately this is hitting some GitHub Action inconsistency with `env`:
-# https://github.com/actions/runner/issues/480
-env:
-  OUT: ${{ format('{0}/out', github.workspace) }}
-  DEBIAN_FRONTEND: "noninteractive"
+  workflow_dispatch:
 
 jobs:
-  build_ubuntu_focal_nightly:
-    runs-on: 16-core
-    container:
-      image: ubuntu:noble
-      env:
-        DISTRO: ubuntu-24.04-noble
-        IS_NIGHTLY: 1
-        CLANG_VERSION: 12
-    steps:
-    - name: Installing dependencies to bootstrap env
-      run: apt update -y && apt install -y git wget lsb-release software-properties-common gpg
-    - name: Installing llvm
-      run: |
-        wget https://apt.llvm.org/llvm.sh
-        chmod +x llvm.sh
-        # Note: Keep this version in sync with the one in the Debian control file.
-        ./llvm.sh ${CLANG_VERSION}
-    - name: Making LLVM the default compiler
-      run: |
-        if [ -f /etc/alternatives/cc ]
-        then
-          update-alternatives --remove-all cc
-        fi
+  build:
+    name: Build HHVM
+    # This targets your specific, dynamically-named self-hosted runner.
+    runs-on:
+      - codebuild-karunscloud-hhvm-build-${{ github.run_id }}-${{ github.run_attempt }}
 
-        if [ -f /etc/alternatives/c++ ]
-        then
-          update-alternatives --remove-all c++
-        fi
-        
-        update-alternatives --install /usr/bin/cc cc /usr/bin/clang++-${CLANG_VERSION} 500
-        update-alternatives --set cc /usr/bin/clang++-${CLANG_VERSION}
-        update-alternatives --install /usr/bin/c++ c++ /usr/bin/clang++-${CLANG_VERSION} 500
-        update-alternatives --set c++ /usr/bin/clang++-${CLANG_VERSION}
-    - name: Fetching HHVM and its submodules
-      uses: actions/checkout@v3
-      with:
-        submodules: 'recursive'
-    - name: Installing HHVM deps and building HHVM
-      run: ci/bin/make-debianish-package
-    - name: Uploading artifacts
-      uses: actions/upload-artifact@v3
-      with:
-        name: out-directory
-        path: ${{ env.OUT }}
+    # All steps will still execute inside this container on the runner.
+    container:
+      # ----- CHANGE IS HERE -----
+      # Using Ubuntu 20.04 (Focal) as requested.
+      image: ubuntu:20.04
+      # --------------------------
+
+    steps:
+      # Step 1: Install all dependencies.
+      - name: Install Dependencies
+        run: |
+          # ----- CHANGE IS HERE -----
+          # Set the codename for Ubuntu 20.04.
+          UBUNTU_CODENAME=focal
+          # --------------------------
+
+          # Prevent interactive prompts during installation.
+          export DEBIAN_FRONTEND=noninteractive
+
+          apt-get update -y
+          apt-get install -y --no-install-recommends \
+            ca-certificates \
+            curl \
+            git \
+            cmake \
+            make \
+            g++ \
+            gnupg \
+            software-properties-common
+
+          echo "Adding HHVM repository..."
+          install -d -m 0755 /usr/share/keyrings
+          curl -fsSL https://dl.hhvm.com/conf/hhvm.gpg.key | gpg --dearmor -o /usr/share/keyrings/hhvm.gpg
+
+          # ----- CHANGE IS HERE -----
+          # Add the Ubuntu repository for both binary (deb) and source (deb-src).
+          tee /etc/apt/sources.list.d/hhvm.list <<EOF
+          deb [signed-by=/usr/share/keyrings/hhvm.gpg] https://dl.hhvm.com/ubuntu ${UBUNTU_CODENAME} main
+          deb-src [signed-by=/usr/share/keyrings/hhvm.gpg] https://dl.hhvm.com/ubuntu ${UBUNTU_CODENAME} main
+          EOF
+          # --------------------------
+
+          apt-get update -y
+          apt-get build-dep -y hhvm-nightly
+
+      # Step 2: Check out the repository code.
+      - name: Check out repository code
+        uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+
+      # Step 3: Build the code.
+      - name: Build HHVM
+        run: |
+          echo "Building HHVM from local repository... ⏳"
+          mkdir -p build
+          cd build
+          cmake -DMYSQL_UNIX_SOCK_ADDR=/var/run/mysqld/mysqld.sock ..
+          make -j$(nproc)
+
+      # Step 4: Upload the final build as an artifact.
+      - name: Upload HHVM Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hhvm-build-ubuntu2004
+          path: build/
