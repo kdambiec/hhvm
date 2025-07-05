@@ -40,9 +40,9 @@ jobs:
 
     # Run the job steps inside a specified Docker container.
     container:
-      image: ubuntu:noble
+      image: ubuntu:jammy
       env:
-        DISTRO: ubuntu-24.04-focal
+        DISTRO: ubuntu-22.04-jammy
         IS_NIGHTLY: 1
         CLANG_VERSION: 20
 
