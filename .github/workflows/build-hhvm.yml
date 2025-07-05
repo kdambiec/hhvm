@@ -1,0 +1,82 @@
+# GitHub Action for building HHVM, based on the official CI pipeline.
+#
+# This workflow builds HHVM inside a Docker container on a 16-core runner.
+# It can only be triggered manually by the user 'kdambiec'.
+# It handles dependency installation, compilation, and artifact uploading.
+
+name: HHVM CI Build
+
+on:
+  # Allows this workflow to be run manually from the Actions tab.
+  # The job itself is restricted to a specific user.
+  workflow_dispatch:
+
+concurrency:
+  # If the workflow is triggered by a pull request, cancel previous runs
+  # for the same pull request. Otherwise, use the run ID.
+  group: ubuntu-ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  cancel-in-progress: true
+
+# Global environment variables for the workflow.
+env:
+  # Define the output directory for build artifacts.
+  OUT: ${{ format('{0}/out', github.workspace) }}
+  # Set DEBIAN_FRONTEND to noninteractive to prevent prompts during package installation.
+  DEBIAN_FRONTEND: "noninteractive"
+
+jobs:
+  build-hhvm-focal:
+    # A descriptive name for the job
+    name: Build HHVM on Ubuntu 20.04 (Focal)
+
+    # This condition ensures the job only runs if the workflow was triggered
+    # manually by the user 'kdambiec'.
+    if: github.actor == 'kdambiec'
+
+    # Use a 16-core, Ubuntu-based runner for this job.
+    runs-on: ubuntu-latest-16-cores
+
+    # Run the job steps inside a specified Docker container.
+    container:
+      image: ubuntu:focal
+      env:
+        DISTRO: ubuntu-20.04-focal
+        IS_NIGHTLY: 1
+        CLANG_VERSION: 12
+
+    steps:
+    - name: Installing dependencies to bootstrap env
+      run: apt update -y && apt install -y git wget lsb-release software-properties-common gpg
+    - name: Installing llvm
+      run: |
+        wget https://apt.llvm.org/llvm.sh
+        chmod +x llvm.sh
+        # Note: Keep this version in sync with the one in the Debian control file.
+        ./llvm.sh ${CLANG_VERSION}
+    - name: Making LLVM the default compiler
+      run: |
+        if [ -f /etc/alternatives/cc ]
+        then
+          update-alternatives --remove-all cc
+        fi
+
+        if [ -f /etc/alternatives/c++ ]
+        then
+          update-alternatives --remove-all c++
+        fi
+        
+        update-alternatives --install /usr/bin/cc cc /usr/bin/clang++-${CLANG_VERSION} 500
+        update-alternatives --set cc /usr/bin/clang++-${CLANG_VERSION}
+        update-alternatives --install /usr/bin/c++ c++ /usr/bin/clang++-${CLANG_VERSION} 500
+        update-alternatives --set c++ /usr/bin/clang++-${CLANG_VERSION}
+    - name: Fetching HHVM and its submodules
+      uses: actions/checkout@v3
+      with:
+        submodules: 'recursive'
+    - name: Installing HHVM deps and building HHVM
+      run: ci/bin/make-debianish-package
+    - name: Uploading artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: out-directory
+        path: ${{ env.OUT }}
