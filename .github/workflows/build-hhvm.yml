@@ -1,5 +1,5 @@
 # .github/workflows/build-hhvm.yml
-# Builds HHVM from the code in this repository.
+# Builds HHVM from the code in this repository using an Ubuntu 20.04 container.
 
 name: Build HHVM from Local Repo
 
@@ -14,15 +14,25 @@ jobs:
     runs-on:
       - codebuild-karunscloud-hhvm-build-${{ github.run_id }}-${{ github.run_attempt }}
 
-    # All steps will still execute inside this Debian 11 container on the runner.
+    # All steps will still execute inside this container on the runner.
     container:
-      image: debian:bullseye
+      # ----- CHANGE IS HERE -----
+      # Using Ubuntu 20.04 (Focal) as requested.
+      image: ubuntu:20.04
+      # --------------------------
 
     steps:
       # Step 1: Install all dependencies.
       - name: Install Dependencies
         run: |
-          DEBIAN_CODENAME=bullseye
+          # ----- CHANGE IS HERE -----
+          # Set the codename for Ubuntu 20.04.
+          UBUNTU_CODENAME=focal
+          # --------------------------
+
+          # Prevent interactive prompts during installation.
+          export DEBIAN_FRONTEND=noninteractive
+
           apt-get update -y
           apt-get install -y --no-install-recommends \
             ca-certificates \
@@ -31,20 +41,24 @@ jobs:
             cmake \
             make \
             g++ \
-            gnupg
-          
+            gnupg \
+            software-properties-common
+
           echo "Adding HHVM repository..."
           install -d -m 0755 /usr/share/keyrings
           curl -fsSL https://dl.hhvm.com/conf/hhvm.gpg.key | gpg --dearmor -o /usr/share/keyrings/hhvm.gpg
-          
+
+          # ----- CHANGE IS HERE -----
+          # Add the Ubuntu repository for both binary (deb) and source (deb-src).
           tee /etc/apt/sources.list.d/hhvm.list <<EOF
-          deb [signed-by=/usr/share/keyrings/hhvm.gpg] https://dl.hhvm.com/debian ${DEBIAN_CODENAME} main
-          deb-src [signed-by=/usr/share/keyrings/hhvm.gpg] https://dl.hhvm.com/debian ${DEBIAN_CODENAME} main
+          deb [signed-by=/usr/share/keyrings/hhvm.gpg] https://dl.hhvm.com/ubuntu ${UBUNTU_CODENAME} main
+          deb-src [signed-by=/usr/share/keyrings/hhvm.gpg] https://dl.hhvm.com/ubuntu ${UBUNTU_CODENAME} main
           EOF
-          
+          # --------------------------
+
           apt-get update -y
           apt-get build-dep -y hhvm-nightly
-      
+
       # Step 2: Check out the repository code.
       - name: Check out repository code
         uses: actions/checkout@v4
@@ -64,5 +78,5 @@ jobs:
       - name: Upload HHVM Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: hhvm-build-debian11
+          name: hhvm-build-ubuntu2004
           path: build/
