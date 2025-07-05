@@ -16,17 +16,13 @@ jobs:
 
     # All steps will still execute inside this Debian 11 container on the runner.
     container:
-      image: debian:bullseye-slim
+      image: debian:bullseye
 
     steps:
-      # --------------------- FIX IS HERE ---------------------
-      # Step 1: Install all dependencies FIRST. This ensures 'git' is
-      # available in the container before the checkout step needs it.
+      # Step 1: Install all dependencies.
       - name: Install Dependencies
         run: |
           DEBIAN_CODENAME=bullseye
-
-          # Update package list and install all necessary tools.
           apt-get update -y
           apt-get install -y --no-install-recommends \
             ca-certificates \
@@ -36,48 +32,35 @@ jobs:
             make \
             g++ \
             gnupg
-
-          # Add the HHVM GPG key and repository.
+          
           echo "Adding HHVM repository..."
           install -d -m 0755 /usr/share/keyrings
           curl -fsSL https://dl.hhvm.com/conf/hhvm.gpg.key | gpg --dearmor -o /usr/share/keyrings/hhvm.gpg
-
-          # Add both the binary (deb) and source (deb-src) repositories.
+          
           tee /etc/apt/sources.list.d/hhvm.list <<EOF
           deb [signed-by=/usr/share/keyrings/hhvm.gpg] https://dl.hhvm.com/debian ${DEBIAN_CODENAME} main
           deb-src [signed-by=/usr/share/keyrings/hhvm.gpg] https://dl.hhvm.com/debian ${DEBIAN_CODENAME} main
           EOF
-
-          # Install the build dependencies for HHVM.
+          
           apt-get update -y
           apt-get build-dep -y hhvm-nightly
       
-      # Step 2: Now that git is installed, check out the repository code.
+      # Step 2: Check out the repository code.
       - name: Check out repository code
         uses: actions/checkout@v4
         with:
           submodules: 'recursive'
-      # --------------------------------------------------------
 
-      # Step 3: Cache the build directory.
-      - name: Cache Build Directory
-        uses: actions/cache@v4
-        with:
-          path: build # The path is relative to the workspace root
-          key: ${{ runner.os }}-debian11-hhvm-build-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-debian11-hhvm-build-
-
-      # Step 4: Build the code that was checked out.
+      # Step 3: Build the code.
       - name: Build HHVM
         run: |
           echo "Building HHVM from local repository... ⏳"
-          mkdir build
+          mkdir -p build
           cd build
           cmake -DMYSQL_UNIX_SOCK_ADDR=/var/run/mysqld/mysqld.sock ..
           make -j$(nproc)
 
-      # Step 5: Upload the final build as an artifact.
+      # Step 4: Upload the final build as an artifact.
       - name: Upload HHVM Artifact
         uses: actions/upload-artifact@v4
         with:
