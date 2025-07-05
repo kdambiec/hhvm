@@ -1,66 +1,58 @@
 # .github/workflows/build-hhvm.yml
-# GitHub Actions pipeline to build HHVM from source.
+# GitHub Actions pipeline to build HHVM from source inside a Debian 11 container.
 
-name: Build HHVM Manually
+name: Build HHVM in Debian 11
 
 # This allows the workflow to be triggered manually from the Actions tab in GitHub.
 on:
   workflow_dispatch:
 
 jobs:
-  #---------------------------------------------------
-  # JOB 1: Compile HHVM from source
-  #---------------------------------------------------
   build:
     name: Build HHVM
-    # Use the latest Ubuntu LTS runner provided by GitHub.
     # Use a 8-core runner for this job.
     runs-on:
       - codebuild-karunscloud-hhvm-build-${{ github.run_id }}-${{ github.run_attempt }}
+    container:
+      image: debian:bullseye-slim
 
     steps:
-      - name: Harden Runner
-        uses: step-security/harden-runner@63424ba62b9b47285b73969542a3821798335013 # v2.8.1
-        with:
-          egress-policy: audit
-
       # Cache the build directory to speed up subsequent runs.
+      # This action runs on the host but maps to the container's workspace.
       - name: Cache Build Directory
-        id: cache-build
         uses: actions/cache@v4
         with:
-          path: hhvm/build
-          key: ${{ runner.os }}-hhvm-build-${{ github.sha }}
+          path: /__w/hhvm-from-source/hhvm-from-source/hhvm/build
+          key: ${{ runner.os }}-debian11-hhvm-build-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-hhvm-build-
-
+            ${{ runner.os }}-debian11-hhvm-build-
+      
+      # The following 'run' steps execute inside the Debian container.
+      # Note: 'sudo' is not needed as commands run as root in the container.
       - name: Install Dependencies
         run: |
-          # The runner is Ubuntu-based, so we'll use an Ubuntu codename (e.g., jammy).
-          UBUNTU_CODENAME=jammy
+          DEBIAN_CODENAME=bullseye
 
-          # Install prerequisite packages.
-          sudo apt-get update -y
-          sudo apt-get install -y \
+          # Update package list and install all necessary tools.
+          apt-get update -y
+          apt-get install -y --no-install-recommends \
             ca-certificates \
             curl \
             git \
             cmake \
             make \
             g++ \
-            software-properties-common \
-            apt-transport-https \
             gnupg
 
-          # Add the HHVM GPG key and repository using the modern, secure method.
+          # Add the HHVM GPG key and repository.
           echo "Adding HHVM repository..."
-          sudo install -d -m 0755 /usr/share/keyrings
-          curl -fsSL https://dl.hhvm.com/conf/hhvm.gpg.key | sudo gpg --dearmor -o /usr/share/keyrings/hhvm.gpg
-          echo "deb [signed-by=/usr/share/keyrings/hhvm.gpg] https://dl.hhvm.com/ubuntu ${UBUNTU_CODENAME} main" | sudo tee /etc/apt/sources.list.d/hhvm.list
+          install -d -m 0755 /usr/share/keyrings
+          curl -fsSL https://dl.hhvm.com/conf/hhvm.gpg.key | gpg --dearmor -o /usr/share/keyrings/hhvm.gpg
+          echo "deb [signed-by=/usr/share/keyrings/hhvm.gpg] https://dl.hhvm.com/debian ${DEBIAN_CODENAME} main" > /etc/apt/sources.list.d/hhvm.list
 
           # Install the build dependencies for HHVM.
-          sudo apt-get update -y
-          sudo apt-get build-dep -y hhvm-nightly
+          apt-get update -y
+          apt-get build-dep -y hhvm-nightly
 
       - name: Download and Build HHVM
         run: |
@@ -74,14 +66,13 @@ jobs:
           echo "Building HHVM... this will take a long time. ⏳"
           mkdir build
           cd build
-          # Use -j$(nproc) to build in parallel using all available cores.
           cmake -DMYSQL_UNIX_SOCK_ADDR=/var/run/mysqld/mysqld.sock ..
           make -j$(nproc)
 
-      # Upload the entire hhvm directory as an artifact to be used by other jobs.
+      # Upload the final build as an artifact for download.
       - name: Upload HHVM Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: hhvm-build
+          name: hhvm-build-debian11
           path: hhvm/
 
