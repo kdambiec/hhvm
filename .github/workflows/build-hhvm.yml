@@ -27,7 +27,7 @@ env:
 jobs:
   build-hhvm-focal:
     # A descriptive name for the job
-    name: Build HHVM on Ubuntu 20.04 (Focal)
+    name: Build HHVM on Ubuntu 24.04 (Noble)
 
     # This condition ensures the job only runs if the workflow was triggered
     # manually by the user 'kdambiec'.
@@ -40,9 +40,9 @@ jobs:
 
     # Run the job steps inside a specified Docker container.
     container:
-      image: ubuntu:focal
+      image: ubuntu:noble
       env:
-        DISTRO: ubuntu-20.04-focal
+        DISTRO: ubuntu-24.04-focal
         IS_NIGHTLY: 1
         CLANG_VERSION: 12
 
