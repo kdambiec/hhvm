@@ -10,15 +10,16 @@ on:
 jobs:
   build:
     name: Build HHVM
-    # Use a 8-core runner for this job.
+    # This now targets your specific, dynamically-named self-hosted runner.
     runs-on:
       - codebuild-karunscloud-hhvm-build-${{ github.run_id }}-${{ github.run_attempt }}
+
+    # All steps will still execute inside this Debian 11 container on the runner.
     container:
       image: debian:bullseye-slim
 
     steps:
       # Cache the build directory to speed up subsequent runs.
-      # This action runs on the host but maps to the container's workspace.
       - name: Cache Build Directory
         uses: actions/cache@v4
         with:
@@ -28,7 +29,6 @@ jobs:
             ${{ runner.os }}-debian11-hhvm-build-
       
       # The following 'run' steps execute inside the Debian container.
-      # Note: 'sudo' is not needed as commands run as root in the container.
       - name: Install Dependencies
         run: |
           DEBIAN_CODENAME=bullseye
@@ -48,7 +48,12 @@ jobs:
           echo "Adding HHVM repository..."
           install -d -m 0755 /usr/share/keyrings
           curl -fsSL https://dl.hhvm.com/conf/hhvm.gpg.key | gpg --dearmor -o /usr/share/keyrings/hhvm.gpg
-          echo "deb [signed-by=/usr/share/keyrings/hhvm.gpg] https://dl.hhvm.com/debian ${DEBIAN_CODENAME} main" > /etc/apt/sources.list.d/hhvm.list
+
+          # Add both the binary (deb) and source (deb-src) repositories.
+          tee /etc/apt/sources.list.d/hhvm.list <<EOF
+          deb [signed-by=/usr/share/keyrings/hhvm.gpg] https://dl.hhvm.com/debian ${DEBIAN_CODENAME} main
+          deb-src [signed-by=/usr/share/keyrings/hhvm.gpg] https://dl.hhvm.com/debian ${DEBIAN_CODENAME} main
+          EOF
 
           # Install the build dependencies for HHVM.
           apt-get update -y
@@ -75,4 +80,3 @@ jobs:
         with:
           name: hhvm-build-debian11
           path: hhvm/
-
