@@ -1,84 +1,87 @@
-# GitHub Action for building HHVM, based on the official CI pipeline.
-#
-# This workflow builds HHVM inside a Docker container on a 16-core runner.
-# It can only be triggered manually by the user 'kdambiec'.
-# It handles dependency installation, compilation, and artifact uploading.
+# .github/workflows/build-hhvm.yml
+# GitHub Actions pipeline to build HHVM from source.
 
-name: HHVM CI Build
+name: Build HHVM Manually
 
+# This allows the workflow to be triggered manually from the Actions tab in GitHub.
 on:
-  # Allows this workflow to be run manually from the Actions tab.
-  # The job itself is restricted to a specific user.
   workflow_dispatch:
 
-concurrency:
-  # If the workflow is triggered by a pull request, cancel previous runs
-  # for the same pull request. Otherwise, use the run ID.
-  group: ubuntu-ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
-  cancel-in-progress: true
-
-# Global environment variables for the workflow.
-env:
-  # Define the output directory for build artifacts.
-  OUT: ${{ format('{0}/out', github.workspace) }}
-  # Set DEBIAN_FRONTEND to noninteractive to prevent prompts during package installation.
-  DEBIAN_FRONTEND: "noninteractive"
-
 jobs:
-  build-hhvm-focal:
-    # A descriptive name for the job
-    name: Build HHVM on Ubuntu 24.04 (Noble)
-
-    # This condition ensures the job only runs if the workflow was triggered
-    # manually by the user 'kdambiec'.
-    if: github.actor == 'kdambiec'
-
+  #---------------------------------------------------
+  # JOB 1: Compile HHVM from source
+  #---------------------------------------------------
+  build:
+    name: Build HHVM
+    # Use the latest Ubuntu LTS runner provided by GitHub.
     # Use a 8-core runner for this job.
     runs-on:
       - codebuild-karunscloud-hhvm-build-${{ github.run_id }}-${{ github.run_attempt }}
 
-
-    # Run the job steps inside a specified Docker container.
-    container:
-      image: ubuntu:jammy
-      env:
-        DISTRO: ubuntu-22.04-jammy
-        IS_NIGHTLY: 1
-        CLANG_VERSION: 20
-
     steps:
-    - name: Installing dependencies to bootstrap env
-      run: apt update -y && apt install -y git wget lsb-release software-properties-common gpg
-    - name: Installing llvm
-      run: |
-        wget https://apt.llvm.org/llvm.sh
-        chmod +x llvm.sh
-        # Note: Keep this version in sync with the one in the Debian control file.
-        ./llvm.sh ${CLANG_VERSION}
-    - name: Making LLVM the default compiler
-      run: |
-        if [ -f /etc/alternatives/cc ]
-        then
-          update-alternatives --remove-all cc
-        fi
+      - name: Harden Runner
+        uses: step-security/harden-runner@63424ba62b9b47285b73969542a3821798335013 # v2.8.1
+        with:
+          egress-policy: audit
 
-        if [ -f /etc/alternatives/c++ ]
-        then
-          update-alternatives --remove-all c++
-        fi
-        
-        update-alternatives --install /usr/bin/cc cc /usr/bin/clang++-${CLANG_VERSION} 500
-        update-alternatives --set cc /usr/bin/clang++-${CLANG_VERSION}
-        update-alternatives --install /usr/bin/c++ c++ /usr/bin/clang++-${CLANG_VERSION} 500
-        update-alternatives --set c++ /usr/bin/clang++-${CLANG_VERSION}
-    - name: Fetching HHVM and its submodules
-      uses: actions/checkout@v3
-      with:
-        submodules: 'recursive'
-    - name: Installing HHVM deps and building HHVM
-      run: ci/bin/make-debianish-package
-    - name: Uploading artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: out-directory
-        path: ${{ env.OUT }}
+      # Cache the build directory to speed up subsequent runs.
+      - name: Cache Build Directory
+        id: cache-build
+        uses: actions/cache@v4
+        with:
+          path: hhvm/build
+          key: ${{ runner.os }}-hhvm-build-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-hhvm-build-
+
+      - name: Install Dependencies
+        run: |
+          # The runner is Ubuntu-based, so we'll use an Ubuntu codename (e.g., jammy).
+          UBUNTU_CODENAME=jammy
+
+          # Install prerequisite packages.
+          sudo apt-get update -y
+          sudo apt-get install -y \
+            ca-certificates \
+            curl \
+            git \
+            cmake \
+            make \
+            g++ \
+            software-properties-common \
+            apt-transport-https \
+            gnupg
+
+          # Add the HHVM GPG key and repository using the modern, secure method.
+          echo "Adding HHVM repository..."
+          sudo install -d -m 0755 /usr/share/keyrings
+          curl -fsSL https://dl.hhvm.com/conf/hhvm.gpg.key | sudo gpg --dearmor -o /usr/share/keyrings/hhvm.gpg
+          echo "deb [signed-by=/usr/share/keyrings/hhvm.gpg] https://dl.hhvm.com/ubuntu ${UBUNTU_CODENAME} main" | sudo tee /etc/apt/sources.list.d/hhvm.list
+
+          # Install the build dependencies for HHVM.
+          sudo apt-get update -y
+          sudo apt-get build-dep -y hhvm-nightly
+
+      - name: Download and Build HHVM
+        run: |
+          # 1. Download HHVM source code
+          echo "Cloning HHVM repository..."
+          git clone --depth=1 git://github.com/facebook/hhvm.git
+          cd hhvm
+          git submodule update --init --recursive
+
+          # 2. Build HHVM
+          echo "Building HHVM... this will take a long time. ⏳"
+          mkdir build
+          cd build
+          # Use -j$(nproc) to build in parallel using all available cores.
+          cmake -DMYSQL_UNIX_SOCK_ADDR=/var/run/mysqld/mysqld.sock ..
+          make -j$(nproc)
+
+      # Upload the entire hhvm directory as an artifact to be used by other jobs.
+      - name: Upload HHVM Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hhvm-build
+          path: hhvm/
+
