@@ -33,8 +33,10 @@ jobs:
     # manually by the user 'kdambiec'.
     if: github.actor == 'kdambiec'
 
-    # Use a 16-core, Ubuntu-based runner for this job.
-    runs-on: ubuntu-latest-16-cores
+    # Use a 8-core runner for this job.
+    runs-on:
+      - codebuild-karunscloud-hhvm-build-${{ github.run_id }}-${{ github.run_attempt }}
+
 
     # Run the job steps inside a specified Docker container.
     container:
